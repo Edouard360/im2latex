@@ -10,7 +10,7 @@ from utils.visualize import plot_attention
 
 
 class Model:
-    def __init__(self, vocab_size, beam_width=1, alignment_history=False):
+    def __init__(self, vocab_size, beam_width=1, factor=1 / 4, alignment_history=False):
         self.beam_width = beam_width  # For generalization btw Training and Inference
 
         self.inp = tf.placeholder(tf.float32, shape=[None, None, None, 1])
@@ -20,12 +20,12 @@ class Model:
 
         self.batch_size = tf.shape(self.inp)[0]
 
-        enc_lstm_dim = 256
-        dec_lstm_dim = 512
+        enc_lstm_dim = int(256 * factor)  # 256/4 = 64
+        dec_lstm_dim = int(512 * factor)  # 512/4 = 128
         self.vocab_size = vocab_size + 4
         embedding_size = 80
 
-        cnn = init_cnn(self.inp)
+        cnn = init_cnn(self.inp, factor=factor)
 
         # function for map to apply the rnn to each row
         def fn(inp):
@@ -36,6 +36,7 @@ class Model:
                     lstm_cell_bw = tf.nn.rnn_cell.LSTMCell(enc_lstm_dim)
 
             output, _ = tf.nn.bidirectional_dynamic_rnn(lstm_cell_fw, lstm_cell_bw, inp, dtype=tf.float32)
+            # Ignore state at end of bi-rnn ? Usually used in seq2seq models
             return tf.concat(output, 2)
 
         fun = tf.make_template('fun', fn)
@@ -48,11 +49,11 @@ class Model:
         attention_states = tf.reshape(self.encoder_output, [self.batch_size, -1, attention_states_depth])
         attention_states_tiled = tile_batch(attention_states, self.beam_width)  # For generalization
 
-        attention_weights_depth = attention_states_depth
-        attention_layer_size = attention_states_depth
+        attention_weights_depth = attention_states_depth  # Depth of the hidden layer for computing weights (query and attention states will be projected)
+        attention_layer_size = attention_states_depth  # named output_size in original decoder and set to: output_size = cell.output_size - vocab_size is for the next layer
         attention_mechanism = BahdanauAttention(attention_weights_depth, attention_states_tiled)
 
-        dec_lstm_cell = tf.nn.rnn_cell.LSTMCell(dec_lstm_dim)
+        dec_lstm_cell = tf.nn.rnn_cell.LSTMCell(dec_lstm_dim)  # Output de celle là => query
         self.cell = AttentionWrapper(cell=dec_lstm_cell,
                                      attention_mechanism=attention_mechanism,
                                      attention_layer_size=attention_layer_size,
@@ -69,6 +70,9 @@ class Model:
     def eval(self, sess, feed_dict):
         return sess.run(self.accuracy, feed_dict=feed_dict)
 
+    def predict(self, sess, feed_dict):
+        return sess.run(self.predicted_labels, feed_dict=feed_dict)
+
     @abc.abstractmethod
     def setup_decoder(self):
         pass
@@ -79,8 +83,8 @@ class Model:
 
 
 class TrainModel(Model):
-    def __init__(self, vocab_size):
-        super(TrainModel, self).__init__(vocab_size, beam_width=1)
+    def __init__(self, vocab_size, factor=1 / 4):
+        super(TrainModel, self).__init__(vocab_size, beam_width=1, factor=factor)
 
     def setup_decoder(self):
         decoder_emb_inp = tf.nn.embedding_lookup([self.embedding], self.true_labels[:, :-1])
@@ -98,6 +102,7 @@ class TrainModel(Model):
                                                            labels=self.true_labels[:, 1:]))
         self.train_step = tf.train.AdadeltaOptimizer(self.learning_rate).minimize(cross_entropy)
         correct_prediction = tf.equal(tf.to_int32(tf.argmax(final_outputs, 2)), self.true_labels[:, 1:])
+        self.predicted_labels = tf.to_int32(tf.argmax(final_outputs, 2))
         self.accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 
     def train(self, sess, feed_dict):
@@ -121,9 +126,6 @@ class GreedyInferenceModel(Model):
         self.predicted_labels = tf.to_int32(tf.argmax(final_outputs, 2))
         correct_prediction = tf.equal(self.predicted_labels, self.true_labels[:, 1:])
         self.accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
-
-    def predict(self, sess, feed_dict):
-        return sess.run(self.predicted_labels, feed_dict=feed_dict)
 
     def visualize(self, sess, image, feed_dict, time=0):
         rf_coords = self.rf_calc.get_receptive_field_coords(image)
@@ -151,6 +153,3 @@ class BeamSearchInferenceModel(Model):
         self.predicted_labels = self.final_outputs.predicted_ids[:, :, 0]
         correct_prediction = tf.equal(self.predicted_labels, self.true_labels[:, 1:])
         self.accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
-
-    def predict(self, sess, feed_dict):
-        return sess.run(self.predicted_labels, feed_dict=feed_dict)

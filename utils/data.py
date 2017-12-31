@@ -5,7 +5,8 @@ import numpy as np
 import tensorflow as tf
 from PIL import Image
 
-def load_data():
+
+def load_data(n_max=None):
     vocab = open('data/latex_vocab.txt').read().split('\n')
     vocab_to_idx = dict([(vocab[i], i) for i in range(len(vocab))])
     formulas = open('data/formulas.norm.lst').read().split('\n')
@@ -34,6 +35,10 @@ def load_data():
     val = open('data/' + index_directory + 'validate.lst').read().split('\n')[:-1]
     test = open('data/' + index_directory + 'test.lst').read().split('\n')[:-1]
 
+    if n_max is not None:
+        train = train[:n_max]
+        test = test[:n_max]
+        val = val[:n_max]
 
     def import_images(datum):
         datum = datum.split(' ')

@@ -5,3 +5,9 @@ data/formula_images/*
 data/images_processed/*
 *.txt
 saved_models/*
+.idea/
+data/*
+.ipynb_checkpoints/
+Makefile
+.gitignore
+trash/
