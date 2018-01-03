@@ -51,3 +51,27 @@ def init_cnn(inp, factor=1 / 4):
     h_pad6 = tf.pad(h_conv6, [[0, 0], [2, 2], [2, 2], [0, 0]], "CONSTANT")
     h_pool6 = tf.nn.max_pool(h_pad6, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
     return h_pool6
+
+def simple_cnn(inp, factor = 1 / 4):
+
+    h_conv1 = tf.layers.conv2d(inp, int(512 * factor), [3, 3], activation=tf.nn.relu, name="conv1")
+    h_bn1 = tf.layers.batch_normalization(h_conv1)
+
+    h_conv2 = tf.layers.conv2d(h_bn1, int(512 * factor), [3, 3], activation=tf.nn.relu, name="conv2")
+    h_bn2 = tf.layers.batch_normalization(h_conv2)
+    h_pool2 = tf.layers.max_pooling2d(h_bn2, [1, 2], [1, 2])
+
+    h_conv3 = tf.layers.conv2d(h_pool2, int(256 * factor), [3, 3], activation=tf.nn.relu, name="conv3")
+    h_bn3 = tf.layers.batch_normalization(h_conv3)
+    h_pool3 = tf.layers.max_pooling2d(h_bn3, [2, 1], [2, 1])
+
+    h_conv4 = tf.layers.conv2d(h_pool3, int(256 * factor), [3, 3], activation=tf.nn.relu, name="conv4")
+    h_bn4 = tf.layers.batch_normalization(h_conv4)
+
+    h_conv5 = tf.layers.conv2d(h_bn4, int(128 * factor), [3, 3], activation=tf.nn.relu, name="conv5")
+    h_pool5 = tf.layers.max_pooling2d(h_conv5, [2, 2], [2, 2])
+
+    h_conv6 = tf.layers.conv2d(h_pool5, int(64 * factor), [3, 3], activation=tf.nn.relu, name="conv6")
+    h_pool6 = tf.layers.max_pooling2d(h_conv6, [2, 2], [2, 2])
+
+    return h_pool6

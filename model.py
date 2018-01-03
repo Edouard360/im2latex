@@ -4,7 +4,7 @@ import tensorflow as tf
 from tensorflow.contrib.seq2seq import BahdanauAttention, AttentionWrapper, BasicDecoder, \
     ScheduledEmbeddingTrainingHelper, dynamic_decode, GreedyEmbeddingHelper, BeamSearchDecoder, tile_batch
 
-from convolutional_network import init_cnn
+from convolutional_network import init_cnn, simple_cnn
 from utils.receptive_field import ReceptiveFieldCalculator
 from utils.visualize import plot_attention
 
@@ -16,7 +16,6 @@ class Model:
         self.inp = tf.placeholder(tf.float32, shape=[None, None, None, 1])
         self.num_words = tf.placeholder(tf.int32, shape=[1])
         self.true_labels = tf.placeholder(tf.int32, shape=[None, None])
-        self.learning_rate = tf.placeholder(tf.float32)
 
         self.batch_size = tf.shape(self.inp)[0]
 
@@ -25,7 +24,7 @@ class Model:
         self.vocab_size = vocab_size + 4
         embedding_size = 80
 
-        cnn = init_cnn(self.inp, factor=factor)
+        cnn = simple_cnn(self.inp, factor=factor)
 
         # function for map to apply the rnn to each row
         def fn(inp):
@@ -100,19 +99,20 @@ class TrainModel(Model):
         cross_entropy = tf.reduce_mean(
             tf.nn.sparse_softmax_cross_entropy_with_logits(logits=final_outputs,
                                                            labels=self.true_labels[:, 1:]))
-        self.train_step = tf.train.AdadeltaOptimizer(self.learning_rate).minimize(cross_entropy)
+        self.train_step = tf.train.AdamOptimizer(0.01).minimize(cross_entropy)
         correct_prediction = tf.equal(tf.to_int32(tf.argmax(final_outputs, 2)), self.true_labels[:, 1:])
         self.predicted_labels = tf.to_int32(tf.argmax(final_outputs, 2))
         self.accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 
     def train(self, sess, feed_dict):
-        _, train_accuracy = sess.run([self.train_step, self.accuracy], feed_dict=feed_dict)
-        return train_accuracy
+        self.summary_accuracy = tf.summary.scalar('accuracy',self.accuracy)
+        _, train_accuracy, summary_accuracy = sess.run([self.train_step, self.accuracy, self.summary_accuracy], feed_dict=feed_dict)
+        return train_accuracy, summary_accuracy
 
 
 class GreedyInferenceModel(Model):
-    def __init__(self, vocab_size):
-        super(GreedyInferenceModel, self).__init__(vocab_size, beam_width=1, alignment_history=True)
+    def __init__(self, vocab_size, factor=1 / 4):
+        super(GreedyInferenceModel, self).__init__(vocab_size, beam_width=1, alignment_history=True, factor=factor)
         self.rf_calc = ReceptiveFieldCalculator()
 
     def setup_decoder(self):
@@ -136,8 +136,8 @@ class GreedyInferenceModel(Model):
 
 
 class BeamSearchInferenceModel(Model):
-    def __init__(self, vocab_size, beam_width=5):
-        super(BeamSearchInferenceModel, self).__init__(vocab_size, beam_width=beam_width)
+    def __init__(self, vocab_size, beam_width=5, factor=1 / 4):
+        super(BeamSearchInferenceModel, self).__init__(vocab_size, beam_width=beam_width, factor=factor)
 
     def setup_decoder(self):
         self.dec_init_state = self.cell.zero_state(self.batch_size * self.beam_width, dtype=tf.float32)
